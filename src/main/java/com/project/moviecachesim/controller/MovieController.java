@@ -3,8 +3,10 @@ package com.project.moviecachesim.controller;
 import com.project.moviecachesim.model.Movie;
 import com.project.moviecachesim.model.MovieResponse;
 import com.project.moviecachesim.service.MovieCacheService;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.util.List;
 import java.util.Map;
 
@@ -12,12 +14,19 @@ import java.util.Map;
 @RequestMapping("/api")
 public class MovieController {
 
-    @Autowired
-    private MovieCacheService service;
+    private final MovieCacheService service;
+
+    public MovieController(MovieCacheService service) {
+        this.service = service;
+    }
 
     @GetMapping("/movies/{id}")
     public MovieResponse getMovie(@PathVariable Long id) {
-        return service.getMovie(id);
+        MovieResponse response = service.getMovie(id);
+        if (response == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Movie not found: " + id);
+        }
+        return response;
     }
 
     @GetMapping("/movies/list")

@@ -78,7 +78,7 @@
             position: absolute; top: 10px; right: 10px;
             background: #e50914; color: white;
             font-size: 10px; padding: 4px 8px;
-            border-radius: 4px; font-weight: bold;
+            border-radius: 4px; font-weight: bold; z-index: 5;
             box-shadow: 0 2px 5px rgba(0,0,0,0.5);
         }
 
@@ -86,6 +86,9 @@
         .admin-panel { background: #f0f2f5; color: black; padding: 30px; border-radius: 10px; min-height: 80vh; margin-top: 20px; }
         .log-box { height: 250px; overflow-y: scroll; background: #1e1e1e; color: #00ff41; padding: 15px; font-family: 'Consolas', monospace; border-radius: 5px; font-size: 13px; }
         .log-item { margin-bottom: 5px; border-bottom: 1px solid #333; padding-bottom: 2px; }
+        .stat-card { background: #fff; border-radius: 8px; padding: 12px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+        .stat-card .value { font-size: 26px; font-weight: bold; }
+        .stat-card .label { font-size: 12px; color: #666; text-transform: uppercase; }
     </style>
 </head>
 <body>
@@ -103,7 +106,7 @@
 <div id="userView" class="container-fluid">
     <div class="p-4">
         <h3>Popüler İçerikler</h3>
-        <p class="text-muted">En çok izlenen filmler LFU (Least Frequently Used) algoritmasıyla otomatik olarak sola gelir.</p>
+        <p style="color:#9a9a9a">En çok izlenen filmler LFU (Least Frequently Used) algoritmasıyla otomatik olarak sola gelir.</p>
         <div class="movie-grid" id="movieGrid">
             <div class="text-center w-100 mt-5">Yükleniyor...</div>
         </div>
@@ -113,18 +116,24 @@
 <div id="adminView" class="container" style="display: none;">
     <div class="admin-panel">
         <h2 class="text-center mb-4">🔧 Sistem Yönetim Paneli</h2>
+        <div class="row g-3 mb-3">
+            <div class="col-6 col-md-3"><div class="stat-card"><div class="value" id="statTotal">0</div><div class="label">Toplam İstek</div></div></div>
+            <div class="col-6 col-md-3"><div class="stat-card"><div class="value text-success" id="statRatio">0%</div><div class="label">Hit Oranı</div></div></div>
+            <div class="col-6 col-md-3"><div class="stat-card"><div class="value text-danger" id="statEvictions">0</div><div class="label">Tahliye (Eviction)</div></div></div>
+            <div class="col-6 col-md-3"><div class="stat-card"><div class="value text-primary" id="statSize">0/5</div><div class="label">Cache Doluluk</div></div></div>
+        </div>
         <div class="row">
             <div class="col-md-6">
                 <div class="card p-3 mb-3 shadow-sm">
                     <h6 class="text-center text-primary fw-bold">Cache Başarı Oranı (Hit/Miss)</h6>
-                    <div style="height: 200px; display: flex; justify-content: center;">
+                    <div style="position: relative; height: 200px;">
                         <canvas id="missRateChart"></canvas>
                     </div>
                 </div>
             </div>
             <div class="col-md-6">
                 <div class="card p-3 mb-3 shadow-sm h-100">
-                    <h6 class="text-center text-danger fw-bold">⚡ RAM (Active Cache - Kapasite: 5)</h6>
+                    <h6 class="text-center text-danger fw-bold">⚡ RAM (Active Cache)</h6>
                     <ul id="ramList" class="list-group mt-3">
                         <li class="list-group-item text-muted text-center">Veri bekleniyor...</li>
                     </ul>
@@ -213,13 +222,13 @@
                     <div class="movie-card" onclick="watchMovie(${movie.id})">
                         ${badge}
                         <div class="poster-container">
-                            <img src="${movie.imageUrl}" class="movie-poster" alt="${movie.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                            <img src="${escapeHtml(movie.imageUrl)}" class="movie-poster" alt="${escapeHtml(movie.title)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
                             <div class="poster-fallback" style="background: ${fallbackColor}; display: none;">
-                                ${movie.title}
+                                ${escapeHtml(movie.title)}
                             </div>
                         </div>
                         <div class="movie-info">
-                            <div class="movie-title">${movie.title}</div>
+                            <div class="movie-title">${escapeHtml(movie.title)}</div>
                             <div class="view-count">👁️ ${movie.accessCount} izlenme</div>
                         </div>
                     </div>
@@ -234,9 +243,13 @@
     // --- 3. İZLEME FONKSİYONU ---
     async function watchMovie(id) {
         const response = await fetch('/api/movies/' + id);
+        if (!response.ok) {
+            logToAdmin(`> HATA: ${id} numaralı film bulunamadı.`, 'text-warning');
+            return;
+        }
         const data = await response.json();
 
-        const modal = new bootstrap.Modal(document.getElementById('movieModal'));
+        const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('movieModal'));
         document.getElementById('modalTitle').innerText = data.movie.title;
         document.getElementById('modalDesc').innerText = data.movie.description;
         document.getElementById('modalImg').src = data.movie.imageUrl;
@@ -251,11 +264,10 @@
         }
 
         modal.show();
-
-        document.getElementById('movieModal').addEventListener('hidden.bs.modal', function () {
-            loadMovies(); // Listeyi yenile ki sıralama değişsin
-        });
     }
+
+    // Modal kapanınca listeyi yenile ki sıralama değişsin (tek sefer bağlanır)
+    document.getElementById('movieModal').addEventListener('hidden.bs.modal', loadMovies);
 
     // --- 4. ADMIN PANELİ ---
     const ctxMiss = document.getElementById('missRateChart').getContext('2d');
@@ -270,6 +282,10 @@
         const stats = await statsRes.json();
         missRateChart.data.datasets[0].data = [stats.cacheHits, stats.cacheMisses];
         missRateChart.update();
+        document.getElementById('statTotal').innerText = stats.totalRequests;
+        document.getElementById('statRatio').innerText = Math.round(stats.hitRatio * 100) + '%';
+        document.getElementById('statEvictions').innerText = stats.evictions;
+        document.getElementById('statSize').innerText = stats.cacheSize + '/' + stats.capacity;
 
         const cacheRes = await fetch('/api/cache-content');
         const ramMovies = await cacheRes.json();
@@ -280,7 +296,7 @@
 
         ramMovies.forEach(m => {
             ramList.innerHTML += `<li class="list-group-item d-flex justify-content-between align-items-center">
-                ${m.title} <span class="badge bg-primary rounded-pill">${m.accessCount}</span>
+                ${escapeHtml(m.title)} <span class="badge bg-primary rounded-pill">${m.accessCount}</span>
             </li>`;
         });
     }
@@ -289,8 +305,17 @@
     function logToAdmin(msg, cls) {
         const box = document.getElementById('systemLogs');
         const time = new Date().toLocaleTimeString();
-        box.innerHTML = `<div class="log-item ${cls}">[${time}] ${msg}</div>` + box.innerHTML;
+        box.innerHTML = `<div class="log-item ${cls}">[${time}] ${escapeHtml(msg)}</div>` + box.innerHTML;
     }
+
+    function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // Admin paneli açıkken istatistikleri canlı tut
+    setInterval(() => {
+        if (document.getElementById('adminView').style.display === 'block') updateAdminStats();
+    }, 2000);
 
     // Film ismine göre sabit bir renk kodu üretir (Gökkuşağı gibi)
     function stringToColor(str) {
@@ -306,8 +331,12 @@
         return `linear-gradient(45deg, ${color}, #141414)`;
     }
 
-    // Başlangıç
-    loadMovies();
+    // Başlangıç (#admin ile doğrudan admin paneli açılır)
+    if (location.hash === '#admin') {
+        switchTab('admin', document.querySelectorAll('.nav-link')[1]);
+    } else {
+        loadMovies();
+    }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>

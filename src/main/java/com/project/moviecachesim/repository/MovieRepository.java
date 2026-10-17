@@ -8,7 +8,5 @@ import java.util.Optional;
 @Repository
 public interface MovieRepository extends JpaRepository<Movie, Long> {
 
-    // YENİ EKLENEN SİHİRLİ METOD:
-    // SQL: SELECT * FROM movies WHERE LOWER(title) = LOWER(girilenDeger)
     Optional<Movie> findByTitleIgnoreCase(String title);
 }
